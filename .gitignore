@@ -20,7 +20,13 @@ compile_commands.json
 .vs/
 .vscode/
 .idea/
+.qtcreator/
 *.user
+
+*.flv
+*.mp4
+*.mkv
+*.ts
 
 .workbuddy/
 .gemini/

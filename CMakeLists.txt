@@ -19,10 +19,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
 
+if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+  list(PREPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/ffmpeg")
+else()
+  list(PREPEND CMAKE_MODULE_PATH "C:/vcpkg/installed/x64-windows/share/ffmpeg")
+endif()
+
 find_package(FFMPEG REQUIRED)
 
 message(STATUS "Qt6 版本: ${Qt6_VERSION}")
 message(STATUS "FFMPEG 头文件: ${FFMPEG_INCLUDE_DIRS}")
 
 add_subdirectory(src/core/common)
+add_subdirectory(demo/01-mini-pusher)
 add_subdirectory(src/app)
