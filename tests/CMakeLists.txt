@@ -5,3 +5,11 @@ add_executable(test_common
 target_link_libraries(test_common PRIVATE
   core_common
 )
+
+add_executable(test_screen_capture
+  test_screen_capture.cpp
+)
+
+target_link_libraries(test_screen_capture PRIVATE
+  core_capture
+)
