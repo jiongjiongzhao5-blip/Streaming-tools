@@ -1,6 +1,8 @@
 add_library(core_capture STATIC
   ScreenCapturer.cpp
   ScreenCapturer.h
+  CameraCapturer.cpp
+  CameraCapturer.h
 )
 
 target_include_directories(core_capture PUBLIC
@@ -17,5 +19,8 @@ if(WIN32)
     dxgi
     gdi32
     user32
+    strmiids
+    ole32
+    oleaut32
   )
 endif()

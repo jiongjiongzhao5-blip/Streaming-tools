@@ -32,6 +32,9 @@ compile_commands.json
 *.raw
 *.pcm
 
+camera_frame_*
+screen_capture_*
+
 .workbuddy/
 .gemini/
 .claude/
