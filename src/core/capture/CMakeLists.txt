@@ -3,14 +3,18 @@ add_library(core_capture STATIC
   ScreenCapturer.h
   CameraCapturer.cpp
   CameraCapturer.h
+  CameraFrameConverter.cpp
+  CameraFrameConverter.h
 )
 
-target_include_directories(core_capture PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/../..
+target_include_directories(core_capture
+  PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  PRIVATE ${FFMPEG_INCLUDE_DIRS}
 )
 
 target_link_libraries(core_capture PUBLIC
   core_common
+  ${FFMPEG_LIBRARIES}
 )
 
 if(WIN32)

@@ -21,3 +21,11 @@ add_executable(test_camera_capture
 target_link_libraries(test_camera_capture PRIVATE
   core_capture
 )
+
+add_executable(test_camera_convert
+  test_camera_convert.cpp
+)
+
+target_link_libraries(test_camera_convert PRIVATE
+  core_capture
+)
