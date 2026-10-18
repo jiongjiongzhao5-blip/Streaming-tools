@@ -31,6 +31,7 @@ compile_commands.json
 *.bmp
 *.raw
 *.pcm
+*.wav
 
 camera_frame_*
 screen_capture_*

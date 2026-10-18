@@ -5,6 +5,8 @@ add_library(core_capture STATIC
   CameraCapturer.h
   CameraFrameConverter.cpp
   CameraFrameConverter.h
+  AudioCapturer.cpp
+  AudioCapturer.h
 )
 
 target_include_directories(core_capture
@@ -26,5 +28,6 @@ if(WIN32)
     strmiids
     ole32
     oleaut32
+    propsys
   )
 endif()

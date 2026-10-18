@@ -29,3 +29,12 @@ add_executable(test_camera_convert
 target_link_libraries(test_camera_convert PRIVATE
   core_capture
 )
+
+add_executable(test_audio_capture
+  test_audio_capture.cpp
+)
+
+target_link_libraries(test_audio_capture PRIVATE
+  core_capture
+  winmm
+)
