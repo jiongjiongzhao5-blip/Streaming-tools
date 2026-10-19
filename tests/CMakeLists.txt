@@ -30,6 +30,14 @@ target_link_libraries(test_camera_convert PRIVATE
   core_capture
 )
 
+add_executable(test_encode
+  test_encode.cpp
+)
+
+target_link_libraries(test_encode PRIVATE
+  core_encode
+)
+
 add_executable(test_audio_capture
   test_audio_capture.cpp
 )

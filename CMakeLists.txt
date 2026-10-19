@@ -32,6 +32,7 @@ message(STATUS "FFMPEG 头文件: ${FFMPEG_INCLUDE_DIRS}")
 
 add_subdirectory(src/core/common)
 add_subdirectory(src/core/capture)
+add_subdirectory(src/core/encode)
 add_subdirectory(demo/01-mini-pusher)
 add_subdirectory(src/app)
 add_subdirectory(tests)
