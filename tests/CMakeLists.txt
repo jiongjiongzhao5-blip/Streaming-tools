@@ -38,6 +38,15 @@ target_link_libraries(test_encode PRIVATE
   core_encode
 )
 
+add_executable(test_output
+  test_output.cpp
+)
+
+target_link_libraries(test_output PRIVATE
+  core_encode
+  core_output
+)
+
 add_executable(test_audio_capture
   test_audio_capture.cpp
 )
