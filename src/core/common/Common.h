@@ -29,6 +29,8 @@ struct StreamConfig {
 
     int cameraIndex = 0;
 
+    int audioDeviceIndex = -1;
+
     int width = 1920;
     int height = 1080;
     int fps = 30;

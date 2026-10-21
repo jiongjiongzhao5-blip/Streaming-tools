@@ -47,6 +47,14 @@ target_link_libraries(test_output PRIVATE
   core_output
 )
 
+add_executable(test_pipeline
+  test_pipeline.cpp
+)
+
+target_link_libraries(test_pipeline PRIVATE
+  core_pipeline
+)
+
 add_executable(test_audio_capture
   test_audio_capture.cpp
 )
