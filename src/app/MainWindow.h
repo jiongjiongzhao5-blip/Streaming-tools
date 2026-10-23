@@ -49,6 +49,9 @@ private:
 
     StreamConfig collectConfig() const;
 
+    void loadSettings();
+    void saveSettings();
+
     QWidget* previewWidget_ = nullptr;
     std::chrono::steady_clock::time_point lastPreviewTime_;
 

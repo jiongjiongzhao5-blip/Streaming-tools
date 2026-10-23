@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QSize>
 #include <QSpinBox>
 #include <QStringList>
@@ -28,6 +29,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     refreshVideoDevices();
     refreshAudioDevices();
+    loadSettings();
     updateSourceFields();
     updateUiState();
 
@@ -235,6 +237,60 @@ void MainWindow::updateSourceFields()
         videoForm_->setRowVisible(cameraRow_, isCamera);
 }
 
+void MainWindow::loadSettings()
+{
+    QSettings settings;
+
+    const int videoSource = settings.value("video/source", 0).toInt();
+    if (videoSource >= 0 && videoSource < videoSourceCombo_->count())
+        videoSourceCombo_->setCurrentIndex(videoSource);
+
+    const int cameraIndex = settings.value("video/cameraIndex", 0).toInt();
+    if (cameraIndex >= 0 && cameraIndex < cameraCombo_->count())
+        cameraCombo_->setCurrentIndex(cameraIndex);
+
+    const QSize size(settings.value("video/width", 1280).toInt(),
+                     settings.value("video/height", 720).toInt());
+    const int resolutionIndex = resolutionCombo_->findData(size);
+    if (resolutionIndex >= 0)
+        resolutionCombo_->setCurrentIndex(resolutionIndex);
+
+    fpsSpin_->setValue(settings.value("video/fps", 30).toInt());
+    bitrateSpin_->setValue(settings.value("video/bitrate", 2500).toInt());
+
+    const int audioSource = settings.value("audio/source", 0).toInt();
+    if (audioSource >= 0 && audioSource < audioSourceCombo_->count()) {
+        audioSourceCombo_->setCurrentIndex(audioSource);
+    }
+
+    const int audioDevice = settings.value("audio/device", -1).toInt();
+    const int audioIndex = audioDeviceCombo_->findData(audioDevice);
+    if (audioIndex >= 0)
+        audioDeviceCombo_->setCurrentIndex(audioIndex);
+
+    targetsEdit_->setPlainText(settings.value("targets/text").toString());
+}
+
+void MainWindow::saveSettings()
+{
+    QSettings settings;
+
+    settings.setValue("video/source", videoSourceCombo_->currentIndex());
+    settings.setValue("video/cameraIndex", cameraCombo_->currentIndex());
+
+    const QSize size = resolutionCombo_->currentData().toSize();
+    settings.setValue("video/width", size.width());
+    settings.setValue("video/height", size.height());
+
+    settings.setValue("video/fps", fpsSpin_->value());
+    settings.setValue("video/bitrate", bitrateSpin_->value());
+
+    settings.setValue("audio/source", audioSourceCombo_->currentIndex());
+    settings.setValue("audio/device", audioDeviceCombo_->currentData().toInt());
+
+    settings.setValue("targets/text", targetsEdit_->toPlainText());
+}
+
 StreamConfig MainWindow::collectConfig() const
 {
     StreamConfig config;
@@ -290,6 +346,8 @@ void MainWindow::startStreaming()
 {
     if (starting_.load() || running_.load())
         return;
+
+    saveSettings();
 
     const StreamConfig config = collectConfig();
     if (config.targets.empty()) {
@@ -489,6 +547,8 @@ void MainWindow::closeEvent(QCloseEvent* event)
 
     if (worker_.joinable())
         worker_.join();
+
+    saveSettings();
 
     QMainWindow::closeEvent(event);
 }
