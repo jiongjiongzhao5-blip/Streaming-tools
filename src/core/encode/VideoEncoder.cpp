@@ -6,6 +6,9 @@ extern "C" {
 #include <libswscale/swscale.h>
 }
 
+#include <atomic>
+#include <cstring>
+
 namespace {
 
 std::string avErrorText(int err)
@@ -25,6 +28,8 @@ struct VideoEncoder::Impl {
 
     int width = 0;
     int height = 0;
+
+    std::atomic<bool> forceKeyFrame{false};
 
     std::string lastError;
     LogCallback log;
@@ -150,6 +155,9 @@ bool VideoEncoder::open(const VideoEncoderConfig& config, LogCallback log)
     if (!config.tune.empty())
         av_opt_set(impl_->ctx->priv_data, "tune", config.tune.c_str(), 0);
 
+    if (std::strcmp(codec->name, "libx264") == 0)
+        av_opt_set(impl_->ctx->priv_data, "forced-idr", "1", 0);
+
     const int openRet = avcodec_open2(impl_->ctx, codec, nullptr);
     if (openRet < 0) {
         return fail("打开 H.264 编码器失败: " + avErrorText(openRet)
@@ -254,6 +262,11 @@ std::vector<AVPacketPtr> VideoEncoder::encode(const VideoFrame& frame)
 
     impl_->yuvFrame->pts = frame.pts;
 
+    if (impl_->forceKeyFrame.exchange(false))
+        impl_->yuvFrame->pict_type = AV_PICTURE_TYPE_I;
+    else
+        impl_->yuvFrame->pict_type = AV_PICTURE_TYPE_NONE;
+
     const int sendRet = avcodec_send_frame(impl_->ctx, impl_->yuvFrame);
     if (sendRet < 0) {
         impl_->lastError = "avcodec_send_frame 失败: " + avErrorText(sendRet);
@@ -262,6 +275,11 @@ std::vector<AVPacketPtr> VideoEncoder::encode(const VideoFrame& frame)
 
     impl_->drain(out);
     return out;
+}
+
+void VideoEncoder::requestKeyFrame()
+{
+    impl_->forceKeyFrame.store(true);
 }
 
 std::vector<AVPacketPtr> VideoEncoder::flush()

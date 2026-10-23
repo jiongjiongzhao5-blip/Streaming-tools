@@ -257,7 +257,18 @@ void StreamPipeline::Impl::audioLoop()
 
 void StreamPipeline::Impl::writeLoop()
 {
+    auto nextMaintenance = Clock::now();
+
     while (running || !videoQueue.empty() || !audioQueue.empty()) {
+        const auto now = Clock::now();
+        if (now >= nextMaintenance) {
+            nextMaintenance = now + std::chrono::seconds(1);
+
+            if (output.pollReconnect() > 0) {
+                videoEncoder.requestKeyFrame();
+            }
+        }
+
         bool didWork = false;
 
         if (auto packet = audioQueue.tryPop(1)) {

@@ -427,8 +427,17 @@ void MainWindow::pollStats()
         QString("音频 %1 块 / %2 包").arg(stats.audioChunksCaptured).arg(
             stats.audioPacketsEncoded));
 
-    targetLabel_->setText(
-        QString("连接 %1/%2").arg(stats.connectedTargets).arg(stats.totalTargets));
+    const int dropped = stats.totalTargets - stats.connectedTargets;
+    if (dropped > 0) {
+        targetLabel_->setText(QString("连接 %1/%2（%3 路重连中）")
+                                  .arg(stats.connectedTargets)
+                                  .arg(stats.totalTargets)
+                                  .arg(dropped));
+    } else {
+        targetLabel_->setText(QString("连接 %1/%2")
+                                  .arg(stats.connectedTargets)
+                                  .arg(stats.totalTargets));
+    }
 }
 
 void MainWindow::appendLog(const QString& message)

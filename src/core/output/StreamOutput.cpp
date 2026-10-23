@@ -6,9 +6,13 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
+#include <algorithm>
+#include <chrono>
 #include <cstring>
 
 namespace {
+
+using Clock = std::chrono::steady_clock;
 
 std::string avErrorText(int err)
 {
@@ -20,6 +24,13 @@ std::string avErrorText(int err)
 constexpr AVRational kFlvTimeBase = {1, 1000};
 
 constexpr const char* kIoTimeout = "5000000";
+
+std::chrono::milliseconds retryDelay(int attempt)
+{
+    const int shift = std::min(std::max(attempt - 1, 0), 5);
+    const int seconds = std::min(1 << shift, 30);
+    return std::chrono::seconds(seconds);
+}
 
 }
 
@@ -37,6 +48,9 @@ struct StreamOutput::Impl {
 
         int64_t packetsSent = 0;
         int64_t bytesSent = 0;
+
+        int retryCount = 0;
+        Clock::time_point nextRetryAt{};
     };
 
     std::vector<Target> targets;
@@ -211,8 +225,15 @@ bool StreamOutput::Impl::writePacket(const AVPacket& packet, AVRational timeBase
         if (ret < 0) {
             target.connected = false;
             target.lastError = "写入失败: " + avErrorText(ret);
-            if (log)
-                log("[" + target.name + "] 已断开: " + target.lastError);
+
+            target.retryCount += 1;
+            target.nextRetryAt = Clock::now() + retryDelay(target.retryCount);
+
+            if (log) {
+                log("[" + target.name + "] 已断开: " + target.lastError + "，"
+                    + std::to_string(retryDelay(target.retryCount).count() / 1000)
+                    + " 秒后重连");
+            }
 
             if (target.ctx) {
                 if (target.ctx->pb)
@@ -341,6 +362,8 @@ std::vector<OutputTargetInfo> StreamOutput::targets() const
     std::vector<OutputTargetInfo> result;
     result.reserve(impl_->targets.size());
 
+    const Clock::time_point now = Clock::now();
+
     for (const Impl::Target& target : impl_->targets) {
         OutputTargetInfo info;
         info.name = target.name;
@@ -349,6 +372,15 @@ std::vector<OutputTargetInfo> StreamOutput::targets() const
         info.packetsSent = target.packetsSent;
         info.bytesSent = target.bytesSent;
         info.lastError = target.lastError;
+        info.retryCount = target.retryCount;
+
+        if (!target.connected && target.nextRetryAt > now) {
+            info.nextRetryInMs = static_cast<int>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    target.nextRetryAt - now)
+                    .count());
+        }
+
         result.push_back(std::move(info));
     }
 
@@ -365,6 +397,48 @@ int StreamOutput::connectedCount() const
     return count;
 }
 
+int StreamOutput::pollReconnect()
+{
+    int reconnected = 0;
+    const Clock::time_point now = Clock::now();
+
+    for (Impl::Target& target : impl_->targets) {
+        if (target.connected)
+            continue;
+
+        if (now < target.nextRetryAt)
+            continue;
+
+        const int previousFailures = target.retryCount;
+
+        if (impl_->openTarget(target)) {
+            target.retryCount = 0;
+            target.nextRetryAt = Clock::time_point{};
+            ++reconnected;
+
+            if (impl_->log) {
+                impl_->log("[" + target.name + "] 重连成功"
+                           + (previousFailures > 0
+                                  ? "（之前失败 " + std::to_string(previousFailures)
+                                        + " 次）"
+                                  : std::string()));
+            }
+        } else {
+            target.retryCount = previousFailures + 1;
+            target.nextRetryAt = now + retryDelay(target.retryCount);
+
+            if (impl_->log) {
+                impl_->log("[" + target.name + "] 第 "
+                           + std::to_string(target.retryCount) + " 次重连失败，"
+                           + std::to_string(retryDelay(target.retryCount).count() / 1000)
+                           + " 秒后再试: " + target.lastError);
+            }
+        }
+    }
+
+    return reconnected;
+}
+
 int StreamOutput::reconnectDisconnected()
 {
     int reconnected = 0;
@@ -374,9 +448,14 @@ int StreamOutput::reconnectDisconnected()
             continue;
 
         if (impl_->openTarget(target)) {
+            target.retryCount = 0;
+            target.nextRetryAt = Clock::time_point{};
             ++reconnected;
             if (impl_->log)
                 impl_->log("[" + target.name + "] 重连成功");
+        } else {
+            target.retryCount += 1;
+            target.nextRetryAt = Clock::now() + retryDelay(target.retryCount);
         }
     }
 

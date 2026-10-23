@@ -11,6 +11,7 @@ extern "C" {
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -476,6 +477,50 @@ int main()
         check(good.isOpen() && good.encode(wrongSize).empty(),
               "送进来的帧尺寸不对时，不编码并返回空");
         std::printf("  失败原因: %s\n", good.lastError().c_str());
+    }
+
+    std::printf("\n--- 5. 强制关键帧（重连后要用）---\n");
+    std::printf("  GOP 设成 300，正常情况下一段里只有开头那个 I 帧。\n");
+    std::printf("  中途请求一次，那一帧必须变成关键帧，否则重连后观众要等两秒才出画面。\n");
+    {
+        VideoEncoderConfig config;
+        config.width = 640;
+        config.height = 360;
+        config.fps = 30;
+        config.gopSize = 300;
+
+        VideoEncoder encoder;
+        if (!encoder.open(config, nullptr)) {
+            check(false, "打开编码器");
+        } else {
+            std::map<int64_t, bool> keyFlags;
+
+            for (int i = 0; i < 30; ++i) {
+                if (i == 10)
+                    encoder.requestKeyFrame();
+
+                for (auto& packet : encoder.encode(*makeTestFrame(640, 360, i))) {
+                    if (packet->pts != AV_NOPTS_VALUE)
+                        keyFlags[packet->pts] = (packet->flags & AV_PKT_FLAG_KEY) != 0;
+                }
+            }
+            for (auto& packet : encoder.flush()) {
+                if (packet->pts != AV_NOPTS_VALUE)
+                    keyFlags[packet->pts] = (packet->flags & AV_PKT_FLAG_KEY) != 0;
+            }
+
+            const auto keyAt = [&keyFlags](int64_t pts) {
+                const auto it = keyFlags.find(pts);
+                return it != keyFlags.end() && it->second;
+            };
+
+            check(keyAt(0), "第 0 帧是天然的关键帧");
+            check(keyAt(10), "请求之后，第 10 帧被强制编成了关键帧");
+            check(!keyAt(5) && !keyAt(15),
+                  "其它帧没有被连带变成关键帧（说明只插了这一个 IDR）");
+
+            encoder.close();
+        }
     }
 
     std::printf("\n================================================\n");

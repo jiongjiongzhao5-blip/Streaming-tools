@@ -35,6 +35,8 @@ public:
 
     std::vector<AVPacketPtr> encode(const VideoFrame& frame);
 
+    void requestKeyFrame();
+
     std::vector<AVPacketPtr> flush();
 
     bool isOpen() const;

@@ -18,6 +18,10 @@ struct OutputTargetInfo {
     int64_t packetsSent = 0;
     int64_t bytesSent = 0;
     std::string lastError;
+
+    int retryCount = 0;
+
+    int nextRetryInMs = 0;
 };
 
 class StreamOutput {
@@ -42,6 +46,8 @@ public:
     std::vector<OutputTargetInfo> targets() const;
 
     int connectedCount() const;
+
+    int pollReconnect();
 
     int reconnectDisconnected();
 

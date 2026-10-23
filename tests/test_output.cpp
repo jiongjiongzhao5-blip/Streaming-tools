@@ -15,6 +15,7 @@ extern "C" {
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -545,6 +546,62 @@ int main()
         std::printf("  重连尝试耗时 %lld 毫秒（有超时保护，不会无限等）\n", ms);
 
         encoder.close();
+    }
+
+    std::printf("\n--- 5. 断线退避重连 ---\n");
+    std::printf("  一个好地址 + 一个必失败的地址，跑 10 秒。\n");
+    std::printf("  预期：坏的那路按 1s / 2s / 4s 的节奏重试，不会每秒疯狂重连。\n");
+    {
+        StreamOutput output;
+
+        VideoEncoderConfig config;
+        config.width = 320;
+        config.height = 180;
+        config.fps = 30;
+
+        VideoEncoder encoder;
+        encoder.open(config, nullptr);
+
+        const std::vector<StreamTarget> targets = {
+            {"ok", "retry_ok.flv"}, {"dead", "Q:/no_such_dir/retry.flv"}};
+
+        const bool opened =
+            output.open(targets, encoder.codecParameters(), nullptr, log);
+        check(opened, "至少有一路连上");
+
+        int frameIndex = 0;
+        const auto start = std::chrono::steady_clock::now();
+
+        while (elapsedMs(start) < 10000) {
+            for (auto& packet :
+                 encoder.encode(*makeTestFrame(320, 180, frameIndex++)))
+                output.writeVideo(*packet, encoder.timeBase());
+
+            output.pollReconnect();
+            std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        }
+
+        const auto infos = output.targets();
+        check(infos.size() == 2, "两路都在列表里");
+
+        if (infos.size() == 2) {
+            std::printf("    ok  : connected=%d, 包数=%lld\n",
+                        infos[0].connected ? 1 : 0,
+                        static_cast<long long>(infos[0].packetsSent));
+            std::printf("    dead: connected=%d, 重试次数=%d\n",
+                        infos[1].connected ? 1 : 0, infos[1].retryCount);
+            std::printf("    dead 上次错误: %s\n", infos[1].lastError.c_str());
+
+            check(infos[0].connected, "好的那一路一直连着");
+            check(infos[0].packetsSent > 150, "好的那一路持续在发包");
+            check(!infos[1].connected, "坏的那一路始终断开");
+
+            check(infos[1].retryCount >= 2 && infos[1].retryCount <= 6,
+                  "重试次数落在退避区间内（不是每秒重试）");
+        }
+
+        encoder.close();
+        output.close();
     }
 
     std::printf("\n================================================\n");
