@@ -7,6 +7,7 @@
 #include <QMainWindow>
 
 #include <atomic>
+#include <chrono>
 #include <mutex>
 #include <thread>
 
@@ -44,7 +45,12 @@ private:
     void appendLog(const QString& message);
     void postLog(const std::string& message);
 
+    void onPreviewFrame(const VideoFramePtr& frame);
+
     StreamConfig collectConfig() const;
+
+    QWidget* previewWidget_ = nullptr;
+    std::chrono::steady_clock::time_point lastPreviewTime_;
 
     QFormLayout* videoForm_ = nullptr;
     QHBoxLayout* cameraRow_ = nullptr;

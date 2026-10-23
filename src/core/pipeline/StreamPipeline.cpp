@@ -42,6 +42,9 @@ struct StreamPipeline::Impl {
 
     std::mutex logMutex;
 
+    std::mutex previewMutex;
+    PreviewCallback previewCallback;
+
     std::atomic<bool> running{false};
 
     ScreenCapturer screen;
@@ -211,6 +214,16 @@ void StreamPipeline::Impl::videoLoop()
             continue;
         }
 
+        {
+            PreviewCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(previewMutex);
+                callback = previewCallback;
+            }
+            if (callback)
+                callback(frame);
+        }
+
         for (auto& packet : videoEncoder.encode(*frame)) {
             videoQueue.push(std::move(packet));
             ++videoPackets;
@@ -271,6 +284,12 @@ StreamPipeline::StreamPipeline() : impl_(std::make_unique<Impl>())
 StreamPipeline::~StreamPipeline()
 {
     stop();
+}
+
+void StreamPipeline::setPreviewCallback(PreviewCallback callback)
+{
+    std::lock_guard<std::mutex> lock(impl_->previewMutex);
+    impl_->previewCallback = std::move(callback);
 }
 
 bool StreamPipeline::start(const StreamConfig& config, LogCallback log)

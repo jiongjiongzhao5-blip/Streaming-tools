@@ -1,5 +1,7 @@
 #include "MainWindow.h"
 
+#include "PreviewWidget.h"
+
 #include "core/capture/AudioCapturer.h"
 #include "core/capture/CameraCapturer.h"
 
@@ -41,7 +43,7 @@ MainWindow::~MainWindow()
 void MainWindow::buildUi()
 {
     setWindowTitle("LightLiveStreamer");
-    resize(920, 700);
+    resize(1180, 800);
 
     auto* central = new QWidget(this);
     auto* mainLayout = new QVBoxLayout(central);
@@ -98,9 +100,13 @@ void MainWindow::buildUi()
     audioRow->addWidget(refreshAudioButton_);
     audioForm->addRow("设备", audioRow);
 
-    auto* sourceLayout = new QHBoxLayout;
-    sourceLayout->addWidget(videoGroup, 1);
-    sourceLayout->addWidget(audioGroup, 1);
+    previewWidget_ = new PreviewWidget(central);
+
+    auto* configPanel = new QWidget(central);
+    auto* configLayout = new QVBoxLayout(configPanel);
+    configLayout->setContentsMargins(0, 0, 0, 0);
+    configLayout->addWidget(videoGroup);
+    configLayout->addWidget(audioGroup);
 
     auto* targetGroup = new QGroupBox("推流地址", central);
     auto* targetLayout = new QVBoxLayout(targetGroup);
@@ -154,10 +160,16 @@ void MainWindow::buildUi()
     logView_->setMaximumBlockCount(2000);
     logLayout->addWidget(logView_);
 
-    mainLayout->addLayout(sourceLayout);
-    mainLayout->addWidget(targetGroup);
-    mainLayout->addLayout(controlLayout);
-    mainLayout->addLayout(statsLayout);
+    configLayout->addWidget(targetGroup);
+    configLayout->addLayout(controlLayout);
+    configLayout->addLayout(statsLayout);
+    configLayout->addStretch();
+
+    auto* topLayout = new QHBoxLayout;
+    topLayout->addWidget(previewWidget_, 3);
+    topLayout->addWidget(configPanel, 2);
+
+    mainLayout->addLayout(topLayout, 3);
     mainLayout->addWidget(logGroup, 1);
 
     setCentralWidget(central);
@@ -298,6 +310,10 @@ void MainWindow::startStreaming()
 
         {
             std::lock_guard<std::mutex> lock(pipelineMutex_);
+
+            pipeline_.setPreviewCallback(
+                [this](const VideoFramePtr& frame) { onPreviewFrame(frame); });
+
             ok = pipeline_.start(config, [this](const std::string& message) {
                 postLog(message);
             });
@@ -343,9 +359,16 @@ void MainWindow::stopStreaming()
         {
             std::lock_guard<std::mutex> lock(pipelineMutex_);
             pipeline_.stop();
+            pipeline_.setPreviewCallback(nullptr);
         }
         QMetaObject::invokeMethod(
-            this, [this] { appendLog("已停止"); }, Qt::QueuedConnection);
+            this,
+            [this] {
+                appendLog("已停止");
+                if (previewWidget_)
+                    static_cast<PreviewWidget*>(previewWidget_)->clear();
+            },
+            Qt::QueuedConnection);
     });
 }
 
@@ -419,6 +442,31 @@ void MainWindow::postLog(const std::string& message)
     const QString text = QString::fromStdString(message);
     QMetaObject::invokeMethod(this, [this, text] { appendLog(text); },
                               Qt::QueuedConnection);
+}
+
+void MainWindow::onPreviewFrame(const VideoFramePtr& frame)
+{
+    if (!frame || frame->bgra.empty() || frame->width <= 0 || frame->height <= 0)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastPreviewTime_ < std::chrono::milliseconds(66))
+        return;
+    lastPreviewTime_ = now;
+
+    auto* holder = new VideoFramePtr(frame);
+    QImage image(frame->bgra.data(), frame->width, frame->height, frame->width * 4,
+                 QImage::Format_ARGB32,
+                 [](void* info) { delete static_cast<VideoFramePtr*>(info); },
+                 holder);
+
+    QMetaObject::invokeMethod(
+        this,
+        [this, image] {
+            if (previewWidget_)
+                static_cast<PreviewWidget*>(previewWidget_)->setImage(image);
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

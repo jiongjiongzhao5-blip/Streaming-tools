@@ -3,8 +3,11 @@
 #include "core/common/Common.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
+
+using PreviewCallback = std::function<void(const VideoFramePtr&)>;
 
 struct PipelineStats {
     int64_t videoFramesCaptured = 0;
@@ -28,6 +31,8 @@ public:
     StreamPipeline& operator=(const StreamPipeline&) = delete;
 
     bool start(const StreamConfig& config, LogCallback log);
+
+    void setPreviewCallback(PreviewCallback callback);
 
     void stop();
 
