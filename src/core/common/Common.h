@@ -41,6 +41,8 @@ struct StreamConfig {
     int channels = 2;
 
     std::vector<StreamTarget> targets;
+
+    std::string recordPath;
 };
 
 struct VideoFrame {

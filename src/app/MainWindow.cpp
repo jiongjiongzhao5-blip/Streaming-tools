@@ -5,14 +5,19 @@
 #include "core/capture/AudioCapturer.h"
 #include "core/capture/CameraCapturer.h"
 
+#include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDateTime>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSize>
 #include <QSpinBox>
@@ -123,6 +128,22 @@ void MainWindow::buildUi()
 
     auto* controlLayout = new QHBoxLayout;
 
+    auto* recordGroup = new QGroupBox("本地录制（可选）", central);
+    auto* recordLayout = new QHBoxLayout(recordGroup);
+
+    recordCheck_ = new QCheckBox("同时录到本地", recordGroup);
+    recordPathEdit_ = new QLineEdit(recordGroup);
+    recordPathEdit_->setPlaceholderText("留空则自动命名 record_日期_时间.flv");
+    recordPathEdit_->setEnabled(false);
+
+    browseRecordButton_ = new QPushButton("浏览...", recordGroup);
+    browseRecordButton_->setFixedWidth(72);
+    browseRecordButton_->setEnabled(false);
+
+    recordLayout->addWidget(recordCheck_);
+    recordLayout->addWidget(recordPathEdit_, 1);
+    recordLayout->addWidget(browseRecordButton_);
+
     startButton_ = new QPushButton("开始推流", central);
     stopButton_ = new QPushButton("停止推流", central);
     stopButton_->setEnabled(false);
@@ -160,16 +181,24 @@ void MainWindow::buildUi()
     logView_ = new QPlainTextEdit(logGroup);
     logView_->setReadOnly(true);
     logView_->setMaximumBlockCount(2000);
+    logView_->setMinimumHeight(140);
     logLayout->addWidget(logView_);
 
     configLayout->addWidget(targetGroup);
+    configLayout->addWidget(recordGroup);
     configLayout->addLayout(controlLayout);
     configLayout->addLayout(statsLayout);
     configLayout->addStretch();
 
+    auto* configScroll = new QScrollArea(central);
+    configScroll->setWidgetResizable(true);
+    configScroll->setFrameShape(QFrame::NoFrame);
+    configScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    configScroll->setWidget(configPanel);
+
     auto* topLayout = new QHBoxLayout;
     topLayout->addWidget(previewWidget_, 3);
-    topLayout->addWidget(configPanel, 2);
+    topLayout->addWidget(configScroll, 2);
 
     mainLayout->addLayout(topLayout, 3);
     mainLayout->addWidget(logGroup, 1);
@@ -186,6 +215,18 @@ void MainWindow::buildUi()
             &MainWindow::refreshAudioDevices);
     connect(startButton_, &QPushButton::clicked, this, &MainWindow::startStreaming);
     connect(stopButton_, &QPushButton::clicked, this, &MainWindow::stopStreaming);
+
+    connect(recordCheck_, &QCheckBox::toggled, this, [this](bool on) {
+        recordPathEdit_->setEnabled(on);
+        browseRecordButton_->setEnabled(on);
+    });
+
+    connect(browseRecordButton_, &QPushButton::clicked, this, [this] {
+        const QString path = QFileDialog::getSaveFileName(
+            this, "选择录制文件", recordPathEdit_->text(), "FLV 视频 (*.flv)");
+        if (!path.isEmpty())
+            recordPathEdit_->setText(path);
+    });
 
     statsTimer_ = new QTimer(this);
     statsTimer_->setInterval(500);
@@ -269,6 +310,9 @@ void MainWindow::loadSettings()
         audioDeviceCombo_->setCurrentIndex(audioIndex);
 
     targetsEdit_->setPlainText(settings.value("targets/text").toString());
+
+    recordCheck_->setChecked(settings.value("record/enabled", false).toBool());
+    recordPathEdit_->setText(settings.value("record/path").toString());
 }
 
 void MainWindow::saveSettings()
@@ -289,6 +333,9 @@ void MainWindow::saveSettings()
     settings.setValue("audio/device", audioDeviceCombo_->currentData().toInt());
 
     settings.setValue("targets/text", targetsEdit_->toPlainText());
+
+    settings.setValue("record/enabled", recordCheck_->isChecked());
+    settings.setValue("record/path", recordPathEdit_->text());
 }
 
 StreamConfig MainWindow::collectConfig() const
@@ -314,6 +361,15 @@ StreamConfig MainWindow::collectConfig() const
     config.sampleRate = 48000;
     config.channels = 2;
     config.audioKbps = 128;
+
+    if (recordCheck_->isChecked()) {
+        QString path = recordPathEdit_->text().trimmed();
+        if (path.isEmpty()) {
+            path = QString("record_%1.flv")
+                       .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+        }
+        config.recordPath = path.toStdString();
+    }
 
     const QStringList lines = targetsEdit_->toPlainText().split('\n');
     for (const QString& raw : lines) {
@@ -459,6 +515,11 @@ void MainWindow::updateUiState()
     refreshAudioButton_->setEnabled(editable);
 
     targetsEdit_->setEnabled(editable);
+
+    recordCheck_->setEnabled(editable);
+    const bool recordPathEnabled = editable && recordCheck_->isChecked();
+    recordPathEdit_->setEnabled(recordPathEnabled);
+    browseRecordButton_->setEnabled(recordPathEnabled);
 }
 
 void MainWindow::pollStats()

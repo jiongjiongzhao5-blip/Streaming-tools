@@ -322,8 +322,8 @@ bool StreamPipeline::start(const StreamConfig& config, LogCallback log)
     if (config.width <= 0 || config.height <= 0 || config.fps <= 0)
         return fail("推流参数无效：宽高和帧率都要大于 0");
 
-    if (config.targets.empty())
-        return fail("没有配置推流目标");
+    if (config.targets.empty() && config.recordPath.empty())
+        return fail("既没有推流目标，也没有录制路径");
 
     impl_->config.width = config.width & ~1;
     impl_->config.height = config.height & ~1;
@@ -349,7 +349,16 @@ bool StreamPipeline::start(const StreamConfig& config, LogCallback log)
     if (!impl_->audioEncoder.open(audioConfig, say))
         return fail("音频编码器打开失败: " + impl_->audioEncoder.lastError());
 
-    if (!impl_->output.open(config.targets, impl_->videoEncoder.codecParameters(),
+    std::vector<StreamTarget> allTargets = config.targets;
+    if (!config.recordPath.empty()) {
+        StreamTarget record;
+        record.platform = "录制";
+        record.url = config.recordPath;
+        allTargets.push_back(record);
+        say("同时录制到 " + config.recordPath);
+    }
+
+    if (!impl_->output.open(allTargets, impl_->videoEncoder.codecParameters(),
                             impl_->audioEncoder.codecParameters(), say)) {
         return fail("推流输出打开失败: " + impl_->output.lastError());
     }
@@ -379,7 +388,7 @@ bool StreamPipeline::start(const StreamConfig& config, LogCallback log)
         + std::to_string(impl_->config.height) + " @"
         + std::to_string(impl_->config.fps) + "fps, "
         + std::to_string(impl_->output.connectedCount()) + "/"
-        + std::to_string(config.targets.size()) + " 路");
+        + std::to_string(allTargets.size()) + " 路");
 
     return true;
 }

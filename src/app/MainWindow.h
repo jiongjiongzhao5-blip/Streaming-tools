@@ -11,10 +11,12 @@
 #include <mutex>
 #include <thread>
 
+class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QHBoxLayout;
 class QLabel;
+class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QSpinBox;
@@ -69,6 +71,10 @@ private:
     QPushButton* refreshAudioButton_ = nullptr;
 
     QPlainTextEdit* targetsEdit_ = nullptr;
+
+    QCheckBox* recordCheck_ = nullptr;
+    QLineEdit* recordPathEdit_ = nullptr;
+    QPushButton* browseRecordButton_ = nullptr;
 
     QPushButton* startButton_ = nullptr;
     QPushButton* stopButton_ = nullptr;

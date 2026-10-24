@@ -286,6 +286,77 @@ int main()
         check(allOk, "连续启动/停止三轮都正常");
     }
 
+    std::printf("\n--- 4. 只录制，不推流 ---\n");
+    std::printf("  录制在管线里就是多一路输出，所以没有推流地址也应该能跑。\n");
+    {
+        StreamConfig config;
+        config.sourceType = SourceType::Screen;
+        config.audioType = AudioSourceType::SystemAudio;
+        config.width = 640;
+        config.height = 360;
+        config.fps = 30;
+        config.videoKbps = 800;
+        config.recordPath = "record_only.flv";
+
+        StreamPipeline pipeline;
+        check(pipeline.start(config, nullptr), "只有录制路径时也能启动");
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+        const PipelineStats s = pipeline.stats();
+        pipeline.stop();
+
+        std::printf("  采了 %lld 帧，连接 %d/%d\n",
+                    static_cast<long long>(s.videoFramesCaptured),
+                    s.connectedTargets, s.totalTargets);
+
+        check(s.videoFramesCaptured > 40, "录制期间正常采集");
+        check(s.connectedTargets == 1, "录制那一路处于连接状态");
+
+        const FlvInfo info = probeFlv("record_only.flv");
+        check(info.ok, "录制文件能被正常打开");
+        check(info.streamCount == 2, "录制文件是双流（音+视频）");
+        check(info.videoPackets > 40, "录制文件里有足够的视频包");
+        check(info.lastAudioMs > 1500, "录制时长接近 2 秒");
+    }
+
+    std::printf("\n--- 5. 推流 + 录制同时进行 ---\n");
+    {
+        StreamConfig config;
+        config.sourceType = SourceType::Screen;
+        config.audioType = AudioSourceType::SystemAudio;
+        config.width = 640;
+        config.height = 360;
+        config.fps = 30;
+        config.videoKbps = 800;
+
+        StreamTarget stream;
+        stream.platform = "stream";
+        stream.url = "pipeline_stream.flv";
+        config.targets = {stream};
+
+        config.recordPath = "pipeline_record.flv";
+
+        StreamPipeline pipeline;
+        check(pipeline.start(config, nullptr), "推流 + 录制可以同时启动");
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        pipeline.stop();
+
+        const FlvInfo a = probeFlv("pipeline_stream.flv");
+        const FlvInfo b = probeFlv("pipeline_record.flv");
+
+        std::printf("    推流端: 视频 %d 包 / 音频 %d 包\n", a.videoPackets,
+                    a.audioPackets);
+        std::printf("    录制端: 视频 %d 包 / 音频 %d 包\n", b.videoPackets,
+                    b.audioPackets);
+
+        check(a.ok && b.ok, "两个文件都生成了");
+        check(a.videoPackets > 0 && b.videoPackets > 0, "两边都有视频包");
+        check(a.videoPackets == b.videoPackets,
+              "两份内容的包数一致（同一份编码结果，不是编了两次）");
+    }
+
     std::printf("\n================================================\n");
     std::printf("  通过 %d 项，失败 %d 项\n", g_passed, g_failed);
     std::printf("================================================\n");
