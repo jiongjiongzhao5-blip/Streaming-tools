@@ -11,6 +11,7 @@ target_include_directories(core_pipeline
 target_link_libraries(core_pipeline PUBLIC
   core_common
   core_capture
+  core_compose
   core_encode
   core_output
 )

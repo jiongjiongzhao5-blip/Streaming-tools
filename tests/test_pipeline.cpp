@@ -1,3 +1,4 @@
+#include "core/capture/CameraCapturer.h"
 #include "core/pipeline/StreamPipeline.h"
 
 extern "C" {
@@ -9,6 +10,8 @@ extern "C" {
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -32,6 +35,69 @@ void check(bool condition, const char* what)
 void check(bool condition, const std::string& what)
 {
     check(condition, what.c_str());
+}
+
+#pragma pack(push, 1)
+struct BmpFileHeader {
+    uint16_t type;
+    uint32_t size;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint32_t offBits;
+};
+
+struct BmpInfoHeader {
+    uint32_t size;
+    int32_t width;
+    int32_t height;
+    uint16_t planes;
+    uint16_t bitCount;
+    uint32_t compression;
+    uint32_t sizeImage;
+    int32_t xPelsPerMeter;
+    int32_t yPelsPerMeter;
+    uint32_t clrUsed;
+    uint32_t clrImportant;
+};
+#pragma pack(pop)
+
+bool saveBmp(const std::string& path, const VideoFrame& frame)
+{
+    if (frame.width <= 0 || frame.height <= 0
+        || frame.bgra.size() < static_cast<size_t>(frame.width) * frame.height * 4)
+        return false;
+
+    const uint32_t imageBytes =
+        static_cast<uint32_t>(frame.width) * frame.height * 4;
+
+    BmpFileHeader fileHeader = {};
+    fileHeader.type = 0x4D42;
+    fileHeader.size = sizeof(BmpFileHeader) + sizeof(BmpInfoHeader) + imageBytes;
+    fileHeader.offBits = sizeof(BmpFileHeader) + sizeof(BmpInfoHeader);
+
+    BmpInfoHeader infoHeader = {};
+    infoHeader.size = sizeof(BmpInfoHeader);
+    infoHeader.width = frame.width;
+    infoHeader.height = frame.height;
+    infoHeader.planes = 1;
+    infoHeader.bitCount = 32;
+    infoHeader.sizeImage = imageBytes;
+    infoHeader.xPelsPerMeter = 2835;
+    infoHeader.yPelsPerMeter = 2835;
+
+    std::FILE* file = std::fopen(path.c_str(), "wb");
+    if (!file)
+        return false;
+
+    std::fwrite(&fileHeader, sizeof(fileHeader), 1, file);
+    std::fwrite(&infoHeader, sizeof(infoHeader), 1, file);
+
+    const size_t stride = static_cast<size_t>(frame.width) * 4;
+    for (int y = frame.height - 1; y >= 0; --y)
+        std::fwrite(frame.bgra.data() + static_cast<size_t>(y) * stride, stride, 1, file);
+
+    std::fclose(file);
+    return true;
 }
 
 struct FlvInfo {
@@ -355,6 +421,73 @@ int main()
         check(a.videoPackets > 0 && b.videoPackets > 0, "两边都有视频包");
         check(a.videoPackets == b.videoPackets,
               "两份内容的包数一致（同一份编码结果，不是编了两次）");
+    }
+
+    std::printf("\n--- 6. 画中画 + 水印（需要两个摄像头）---\n");
+    {
+        const std::vector<std::string> cameras = CameraCapturer::listDevices();
+
+        if (cameras.size() < 2) {
+            std::printf("  这台机器只有 %d 个摄像头，跳过本节。\n",
+                        static_cast<int>(cameras.size()));
+            std::printf("  想验证的话装个虚拟摄像头（OBS 或 screen-capture-recorder）就行。\n");
+        } else {
+            StreamConfig config;
+            config.sourceType = SourceType::Screen;
+            config.audioType = AudioSourceType::SystemAudio;
+            config.width = 640;
+            config.height = 360;
+            config.fps = 30;
+            config.videoKbps = 800;
+
+            StreamTarget target;
+            target.platform = "compose";
+            target.url = "compose_test.flv";
+            config.targets = {target};
+
+            config.pipEnabled = true;
+            config.pipCameraIndex = 1;
+            config.pipCorner = PipCorner::BottomRight;
+            config.watermarkText = "LIVE 2026";
+
+            StreamPipeline pipeline;
+
+            std::mutex frameMutex;
+            VideoFramePtr captured;
+
+            pipeline.setPreviewCallback([&](const VideoFramePtr& frame) {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                if (!captured)
+                    captured = frame;
+            });
+
+            const bool started = pipeline.start(config, log);
+            check(started, "带画中画和水印的管线启动成功");
+
+            if (started) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+                pipeline.stop();
+            }
+
+            VideoFramePtr frame;
+            {
+                std::lock_guard<std::mutex> lock(frameMutex);
+                frame = captured;
+            }
+
+            check(frame != nullptr, "抓到了合成后的画面");
+
+            if (frame) {
+                check(frame->width == config.width && frame->height == config.height,
+                      "合成画面的尺寸等于推流分辨率");
+                check(saveBmp("compose_result.bmp", *frame),
+                      "已保存为 compose_result.bmp");
+                std::printf("  打开这张图确认：右下角有摄像头小窗，左上角有 LIVE 2026\n");
+            }
+
+            const FlvInfo info = probeFlv("compose_test.flv");
+            check(info.ok && info.streamCount == 2, "同时写出的推流文件也正常");
+        }
     }
 
     std::printf("\n================================================\n");

@@ -144,6 +144,30 @@ void MainWindow::buildUi()
     recordLayout->addWidget(recordPathEdit_, 1);
     recordLayout->addWidget(browseRecordButton_);
 
+    auto* overlayGroup = new QGroupBox("画面叠加（可选）", central);
+    auto* overlayForm = new QFormLayout(overlayGroup);
+
+    pipCheck_ = new QCheckBox("画中画", overlayGroup);
+    pipCameraCombo_ = new QComboBox(overlayGroup);
+    pipCameraCombo_->setEnabled(false);
+
+    pipCornerCombo_ = new QComboBox(overlayGroup);
+    pipCornerCombo_->addItem("右下", static_cast<int>(PipCorner::BottomRight));
+    pipCornerCombo_->addItem("左下", static_cast<int>(PipCorner::BottomLeft));
+    pipCornerCombo_->addItem("右上", static_cast<int>(PipCorner::TopRight));
+    pipCornerCombo_->addItem("左上", static_cast<int>(PipCorner::TopLeft));
+    pipCornerCombo_->setEnabled(false);
+
+    auto* pipRow = new QHBoxLayout;
+    pipRow->addWidget(pipCheck_);
+    pipRow->addWidget(pipCameraCombo_, 1);
+    pipRow->addWidget(pipCornerCombo_);
+    overlayForm->addRow("小窗", pipRow);
+
+    watermarkEdit_ = new QLineEdit(overlayGroup);
+    watermarkEdit_->setPlaceholderText("留空则不加水印，例如：直播中");
+    overlayForm->addRow("水印", watermarkEdit_);
+
     startButton_ = new QPushButton("开始推流", central);
     stopButton_ = new QPushButton("停止推流", central);
     stopButton_->setEnabled(false);
@@ -186,6 +210,7 @@ void MainWindow::buildUi()
 
     configLayout->addWidget(targetGroup);
     configLayout->addWidget(recordGroup);
+    configLayout->addWidget(overlayGroup);
     configLayout->addLayout(controlLayout);
     configLayout->addLayout(statsLayout);
     configLayout->addStretch();
@@ -221,6 +246,11 @@ void MainWindow::buildUi()
         browseRecordButton_->setEnabled(on);
     });
 
+    connect(pipCheck_, &QCheckBox::toggled, this, [this](bool on) {
+        pipCameraCombo_->setEnabled(on);
+        pipCornerCombo_->setEnabled(on);
+    });
+
     connect(browseRecordButton_, &QPushButton::clicked, this, [this] {
         const QString path = QFileDialog::getSaveFileName(
             this, "选择录制文件", recordPathEdit_->text(), "FLV 视频 (*.flv)");
@@ -236,20 +266,31 @@ void MainWindow::buildUi()
 void MainWindow::refreshVideoDevices()
 {
     const QString previous = cameraCombo_->currentText();
+    const QString previousPip = pipCameraCombo_->currentText();
 
     cameraCombo_->clear();
+    pipCameraCombo_->clear();
 
     const std::vector<std::string> devices = CameraCapturer::listDevices();
-    for (const std::string& name : devices)
-        cameraCombo_->addItem(QString::fromStdString(name));
+    for (const std::string& name : devices) {
+        const QString text = QString::fromStdString(name);
+        cameraCombo_->addItem(text);
+        pipCameraCombo_->addItem(text);
+    }
 
     if (devices.empty()) {
         cameraCombo_->addItem("（没有找到摄像头）");
+        pipCameraCombo_->addItem("（没有找到摄像头）");
         appendLog("没有枚举到任何摄像头");
     } else {
         const int index = cameraCombo_->findText(previous);
         if (index >= 0)
             cameraCombo_->setCurrentIndex(index);
+
+        const int pipIndex = pipCameraCombo_->findText(previousPip);
+        if (pipIndex >= 0)
+            pipCameraCombo_->setCurrentIndex(pipIndex);
+
         appendLog(QString("枚举到 %1 个摄像头").arg(devices.size()));
     }
 }
@@ -313,6 +354,21 @@ void MainWindow::loadSettings()
 
     recordCheck_->setChecked(settings.value("record/enabled", false).toBool());
     recordPathEdit_->setText(settings.value("record/path").toString());
+
+    pipCheck_->setChecked(settings.value("overlay/pip", false).toBool());
+
+    const int pipCamera = settings.value("overlay/pipCamera", 0).toInt();
+    if (pipCamera >= 0 && pipCamera < pipCameraCombo_->count())
+        pipCameraCombo_->setCurrentIndex(pipCamera);
+
+    const int pipCorner =
+        settings.value("overlay/pipCorner", static_cast<int>(PipCorner::BottomRight))
+            .toInt();
+    const int cornerIndex = pipCornerCombo_->findData(pipCorner);
+    if (cornerIndex >= 0)
+        pipCornerCombo_->setCurrentIndex(cornerIndex);
+
+    watermarkEdit_->setText(settings.value("overlay/watermark").toString());
 }
 
 void MainWindow::saveSettings()
@@ -336,6 +392,11 @@ void MainWindow::saveSettings()
 
     settings.setValue("record/enabled", recordCheck_->isChecked());
     settings.setValue("record/path", recordPathEdit_->text());
+
+    settings.setValue("overlay/pip", pipCheck_->isChecked());
+    settings.setValue("overlay/pipCamera", pipCameraCombo_->currentIndex());
+    settings.setValue("overlay/pipCorner", pipCornerCombo_->currentData().toInt());
+    settings.setValue("overlay/watermark", watermarkEdit_->text());
 }
 
 StreamConfig MainWindow::collectConfig() const
@@ -370,6 +431,14 @@ StreamConfig MainWindow::collectConfig() const
         }
         config.recordPath = path.toStdString();
     }
+
+    config.pipEnabled = pipCheck_->isChecked();
+    if (config.pipEnabled) {
+        config.pipCameraIndex = std::max(0, pipCameraCombo_->currentIndex());
+        config.pipCorner =
+            static_cast<PipCorner>(pipCornerCombo_->currentData().toInt());
+    }
+    config.watermarkText = watermarkEdit_->text().trimmed().toStdString();
 
     const QStringList lines = targetsEdit_->toPlainText().split('\n');
     for (const QString& raw : lines) {
@@ -520,6 +589,12 @@ void MainWindow::updateUiState()
     const bool recordPathEnabled = editable && recordCheck_->isChecked();
     recordPathEdit_->setEnabled(recordPathEnabled);
     browseRecordButton_->setEnabled(recordPathEnabled);
+
+    pipCheck_->setEnabled(editable);
+    const bool pipEnabled = editable && pipCheck_->isChecked();
+    pipCameraCombo_->setEnabled(pipEnabled);
+    pipCornerCombo_->setEnabled(pipEnabled);
+    watermarkEdit_->setEnabled(editable);
 }
 
 void MainWindow::pollStats()

@@ -76,6 +76,11 @@ private:
     QLineEdit* recordPathEdit_ = nullptr;
     QPushButton* browseRecordButton_ = nullptr;
 
+    QCheckBox* pipCheck_ = nullptr;
+    QComboBox* pipCameraCombo_ = nullptr;
+    QComboBox* pipCornerCombo_ = nullptr;
+    QLineEdit* watermarkEdit_ = nullptr;
+
     QPushButton* startButton_ = nullptr;
     QPushButton* stopButton_ = nullptr;
     QLabel* stateLabel_ = nullptr;

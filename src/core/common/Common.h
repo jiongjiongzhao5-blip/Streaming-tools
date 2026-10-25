@@ -18,6 +18,13 @@ enum class AudioSourceType {
     Microphone,
 };
 
+enum class PipCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+};
+
 struct StreamTarget {
     std::string platform;
     std::string url;
@@ -43,6 +50,13 @@ struct StreamConfig {
     std::vector<StreamTarget> targets;
 
     std::string recordPath;
+
+    bool pipEnabled = false;
+    int pipCameraIndex = 0;
+    PipCorner pipCorner = PipCorner::BottomRight;
+    int pipWidth = 0;
+
+    std::string watermarkText;
 };
 
 struct VideoFrame {

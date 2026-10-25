@@ -5,6 +5,7 @@
 #include "core/capture/CameraFrameConverter.h"
 #include "core/capture/ScreenCapturer.h"
 #include "core/common/BoundedQueue.h"
+#include "core/compose/VideoCompositor.h"
 #include "core/encode/AudioEncoder.h"
 #include "core/encode/VideoEncoder.h"
 #include "core/output/StreamOutput.h"
@@ -51,6 +52,13 @@ struct StreamPipeline::Impl {
     CameraCapturer camera;
     CameraFrameConverter cameraConverter;
     AudioCapturer audio;
+
+    CameraCapturer pipCamera;
+    CameraFrameConverter pipConverter;
+
+    bool pipActive = false;
+
+    VideoCompositor compositor;
 
     VideoEncoder videoEncoder;
     AudioEncoder audioEncoder;
@@ -214,6 +222,20 @@ void StreamPipeline::Impl::videoLoop()
             continue;
         }
 
+        if (compositor.isConfigured()) {
+            VideoFramePtr pipFrame;
+            if (pipActive) {
+                CameraRawFramePtr pipRaw = pipCamera.nextFrame(0);
+                if (pipRaw)
+                    pipFrame = pipConverter.convert(*pipRaw);
+            }
+
+            VideoFramePtr composed =
+                compositor.compose(*frame, pipFrame ? pipFrame.get() : nullptr);
+            if (composed)
+                frame = composed;
+        }
+
         {
             PreviewCallback callback;
             {
@@ -310,6 +332,7 @@ bool StreamPipeline::start(const StreamConfig& config, LogCallback log)
     impl_->config = config;
     impl_->log = std::move(log);
     impl_->lastError.clear();
+    impl_->pipActive = false;
 
     const LogCallback say = impl_->guardedLog();
     const auto fail = [this, &say](const std::string& reason) {
@@ -371,6 +394,33 @@ bool StreamPipeline::start(const StreamConfig& config, LogCallback log)
             return fail("摄像头打开失败: 索引 " + std::to_string(config.cameraIndex));
     }
 
+    if (config.pipEnabled || !config.watermarkText.empty()) {
+        CompositorConfig composeConfig;
+        composeConfig.canvasWidth = impl_->config.width;
+        composeConfig.canvasHeight = impl_->config.height;
+        composeConfig.pipEnabled = config.pipEnabled;
+        composeConfig.pipCorner = config.pipCorner;
+        composeConfig.pipWidth = config.pipWidth;
+        composeConfig.watermarkText = config.watermarkText;
+
+        if (!impl_->compositor.configure(composeConfig, say))
+            return fail("画面合成器配置失败: " + impl_->compositor.lastError());
+
+        if (config.pipEnabled) {
+            if (config.sourceType == SourceType::Camera
+                && config.pipCameraIndex == config.cameraIndex) {
+                say("画中画和主画面选的是同一个摄像头，小窗会拿不到画面");
+            }
+
+            if (impl_->pipCamera.open(config.pipCameraIndex, say)) {
+                impl_->pipActive = true;
+                say("画中画摄像头已就绪");
+            } else {
+                say("画中画摄像头打开失败，本次只推主画面");
+            }
+        }
+    }
+
     if (!impl_->audio.open(config.audioType, config.audioDeviceIndex, say))
         return fail("音频采集打开失败");
 
@@ -406,7 +456,10 @@ void StreamPipeline::stop()
         && !impl_->audioThread.joinable() && !impl_->writeThread.joinable()) {
         impl_->screen.close();
         impl_->camera.close();
+        impl_->pipCamera.close();
         impl_->audio.close();
+        impl_->compositor.close();
+        impl_->pipActive = false;
         impl_->videoEncoder.close();
         impl_->audioEncoder.close();
         impl_->output.close();
@@ -430,7 +483,10 @@ void StreamPipeline::stop()
 
     impl_->screen.close();
     impl_->camera.close();
+    impl_->pipCamera.close();
     impl_->audio.close();
+    impl_->compositor.close();
+    impl_->pipActive = false;
 
     impl_->videoEncoder.close();
     impl_->audioEncoder.close();

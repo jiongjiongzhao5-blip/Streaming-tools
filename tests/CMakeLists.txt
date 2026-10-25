@@ -47,6 +47,14 @@ target_link_libraries(test_output PRIVATE
   core_output
 )
 
+add_executable(test_compose
+  test_compose.cpp
+)
+
+target_link_libraries(test_compose PRIVATE
+  core_compose
+)
+
 add_executable(test_pipeline
   test_pipeline.cpp
 )
